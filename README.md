@@ -13,7 +13,7 @@ Serve [Node.js](https://nodejs.org/).
 
 ```bash
 npm install
-npx electron .
+npm start
 ```
 
 ## Comandi

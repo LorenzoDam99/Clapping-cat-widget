@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;background:transparent;overflow:hidden">
+<canvas id="c" style="width:100vw;height:100vh;object-fit:contain"></canvas>
+<video id="v" src="anim.mp4" autoplay muted loop playsinline
+       style="position:fixed;top:0;left:0;width:2px;height:2px;opacity:0.01;pointer-events:none"></video>
+<script>
+const { ipcRenderer } = require('electron');
+
+const v = document.getElementById('v');
+const c = document.getElementById('c');
+const ctx = c.getContext('2d', { willReadFrequently: true });
+const LOW = 10, HIGH = 40; // soglie di sensibilità del verde
+const MAX = 720;           // lato massimo di elaborazione (per leggerezza)
+
+function process() {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return;
+  const s = Math.min(1, MAX / Math.max(vw, vh));
+  const w = Math.round(vw * s), h = Math.round(vh * s);
+  if (c.width !== w) { c.width = w; c.height = h; }
+  ctx.drawImage(v, 0, 0, w, h);
+  const f = ctx.getImageData(0, 0, w, h), d = f.data;
+  for (let k = 0; k < d.length; k += 4) {
+    const m = Math.max(d[k], d[k + 2]);
+    const gd = d[k + 1] - m;          // quanto il pixel è più verde del resto
+    if (gd > LOW) {
+      d[k + 3] = gd >= HIGH ? 0 : 255 * (HIGH - gd) / (HIGH - LOW);
+      d[k + 1] = m;                    // toglie l'alone verde sui bordi
+    }
+  }
+  ctx.putImageData(f, 0, 0);
+}
+
+function loop() {
+  process();
+  v.requestVideoFrameCallback(loop);   // elabora solo quando c'è un nuovo frame
+}
+v.addEventListener('playing', () => v.requestVideoFrameCallback(loop), { once: true });
+v.play().catch(e => document.body.innerText = 'Errore: ' + e);
+
+// ---- Trascinamento e click ----
+c.style.cursor = 'grab';
+
+let drag = null, moved = false;
+c.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  c.setPointerCapture(e.pointerId);
+  drag = { mx: e.screenX, my: e.screenY, wx: window.screenX, wy: window.screenY };
+  moved = false;
+  c.style.cursor = 'grabbing';
+});
+c.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.screenX - drag.mx, dy = e.screenY - drag.my;
+  if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+  if (moved) ipcRenderer.send('move', drag.wx + dx, drag.wy + dy);
+});
+c.addEventListener('pointerup', () => {
+  c.style.cursor = 'grab';
+  if (drag && !moved) onClick();   // click senza trascinamento
+  drag = null;
+});
+
+// Cosa fa il click: qui metti quello che vuoi
+function onClick() {
+ // v.paused ? v.play() : v.pause();  // esempio: pausa/riprendi
+}
+
+// Tasto destro = chiudi il widget
+c.addEventListener('contextmenu', e => { e.preventDefault(); ipcRenderer.send('quit'); });
+</script>
+</body>
+</html>
